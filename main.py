@@ -9,7 +9,6 @@ import os
 import cv2
 import numpy as np
 
-# ================= APP =================
 app = FastAPI()
 
 app.add_middleware(
@@ -20,42 +19,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ================= DB =================
 DATABASE_URL = "sqlite:///./rental.db"
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}  # important for sqlite
-)
-
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# ================= TIMEZONE =================
 IST = pytz.timezone("Asia/Kolkata")
 
-# ================= FILE STORAGE =================
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
-# ================= MODELS =================
 class Vehicle(Base):
     __tablename__ = "vehicles"
     id = Column(Integer, primary_key=True)
     vehicle_number = Column(String, unique=True)
     available = Column(Boolean, default=True)
 
-
 class Trip(Base):
     __tablename__ = "trips"
-
     id = Column(Integer, primary_key=True)
-
     vehicle_number = Column(String)
     driver_name = Column(String)
     status = Column(String)
-
     start_time = Column(String)
     end_time = Column(String)
 
@@ -71,12 +56,10 @@ class Trip(Base):
 
     damage_detected = Column(Boolean, default=False)
     damage_score = Column(Float, default=0.0)
-
+    fine_amount = Column(Integer, default=0)
 
 Base.metadata.create_all(bind=engine)
 
-
-# ================= DB DEPENDENCY =================
 def get_db():
     db = SessionLocal()
     try:
@@ -84,54 +67,34 @@ def get_db():
     finally:
         db.close()
 
-
-# ================= HELPERS =================
 def save_file(file: UploadFile):
     filename = f"{datetime.now().timestamp()}_{file.filename}"
     path = os.path.join(UPLOAD_DIR, filename)
-
     with open(path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-
     return path
 
-
-def compare_images(img1_path, img2_path):
-    img1 = cv2.imread(img1_path)
-    img2 = cv2.imread(img2_path)
-
+def compare_images(a, b):
+    img1 = cv2.imread(a)
+    img2 = cv2.imread(b)
     if img1 is None or img2 is None:
         return 0
-
     img1 = cv2.resize(img1, (300, 300))
     img2 = cv2.resize(img2, (300, 300))
-
     diff = cv2.absdiff(img1, img2)
     return float(np.mean(diff))
 
-
-# ================= ROUTES =================
-
 @app.post("/add_vehicle")
-def add_vehicle(
-    vehicle_number: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    existing = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
-
-    if existing:
-        return {"error": "Vehicle already exists"}
-
+def add_vehicle(vehicle_number: str = Form(...), db: Session = Depends(get_db)):
+    if db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first():
+        return {"error": "exists"}
     db.add(Vehicle(vehicle_number=vehicle_number))
     db.commit()
-
-    return {"message": "Vehicle added"}
-
+    return {"msg": "added"}
 
 @app.get("/vehicles")
-def get_vehicles(db: Session = Depends(get_db)):
+def vehicles(db: Session = Depends(get_db)):
     return db.query(Vehicle).all()
-
 
 @app.post("/start_trip")
 def start_trip(
@@ -143,39 +106,26 @@ def start_trip(
     right: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
-
-    if not vehicle:
-        return {"error": "Vehicle not found"}
-
-    if not vehicle.available:
-        return {"error": "Vehicle already in trip"}
-
-    # Save images
-    front_path = save_file(front)
-    back_path = save_file(back)
-    left_path = save_file(left)
-    right_path = save_file(right)
+    v = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
+    if not v or not v.available:
+        return {"error": "not available"}
 
     trip = Trip(
         vehicle_number=vehicle_number,
         driver_name=driver_name,
         status="ongoing",
         start_time=datetime.now(IST).isoformat(),
-
-        start_front=front_path,
-        start_back=back_path,
-        start_left=left_path,
-        start_right=right_path
+        start_front=save_file(front),
+        start_back=save_file(back),
+        start_left=save_file(left),
+        start_right=save_file(right)
     )
 
-    vehicle.available = False
-
+    v.available = False
     db.add(trip)
     db.commit()
 
-    return {"message": "Trip started"}
-
+    return {"msg": "started"}
 
 @app.post("/end_trip")
 def end_trip(
@@ -186,53 +136,49 @@ def end_trip(
     right: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    trip = db.query(Trip).filter_by(
-        vehicle_number=vehicle_number,
-        status="ongoing"
-    ).first()
-
+    trip = db.query(Trip).filter_by(vehicle_number=vehicle_number, status="ongoing").first()
     if not trip:
-        return {"error": "No active trip found"}
+        return {"error": "no trip"}
 
-    # Save end images
-    front_path = save_file(front)
-    back_path = save_file(back)
-    left_path = save_file(left)
-    right_path = save_file(right)
+    f = save_file(front)
+    b = save_file(back)
+    l = save_file(left)
+    r = save_file(right)
 
-    trip.end_front = front_path
-    trip.end_back = back_path
-    trip.end_left = left_path
-    trip.end_right = right_path
-
-    # AI comparison
     scores = [
-        compare_images(trip.start_front, front_path),
-        compare_images(trip.start_back, back_path),
-        compare_images(trip.start_left, left_path),
-        compare_images(trip.start_right, right_path),
+        compare_images(trip.start_front, f),
+        compare_images(trip.start_back, b),
+        compare_images(trip.start_left, l),
+        compare_images(trip.start_right, r),
     ]
 
-    avg_score = sum(scores) / len(scores)
-    damage = avg_score > 20
+    avg = sum(scores) / 4
 
-    trip.damage_detected = damage
-    trip.damage_score = avg_score
+    fine = 0
+    if avg > 50:
+        fine = 2000
+    elif avg > 30:
+        fine = 1000
+    elif avg > 20:
+        fine = 500
+
+    trip.end_front = f
+    trip.end_back = b
+    trip.end_left = l
+    trip.end_right = r
+    trip.damage_score = avg
+    trip.damage_detected = avg > 20
+    trip.fine_amount = fine
     trip.status = "completed"
     trip.end_time = datetime.now(IST).isoformat()
 
-    vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
-    vehicle.available = True
+    v = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
+    v.available = True
 
     db.commit()
 
-    return {
-        "message": "Trip ended",
-        "damage": damage,
-        "score": avg_score
-    }
-
+    return {"damage": trip.damage_detected, "fine": fine}
 
 @app.get("/trips")
-def get_trips(db: Session = Depends(get_db)):
+def trips(db: Session = Depends(get_db)):
     return db.query(Trip).all()

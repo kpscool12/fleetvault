@@ -1,14 +1,11 @@
 import React, { useEffect, useState } from "react";
 
-const BASE_URL = "https://fleetvault-backend.onrender.com";
+const BASE_URL = "YOUR_BACKEND_URL"; // 🔥 replace
 
-function formatTime(time) {
-  if (!time) return "";
-
-  const date = new Date(time);
-
-  return date.toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
+function formatTime(t) {
+  if (!t) return "";
+  const d = new Date(t.replace("Z", ""));
+  return d.toLocaleString("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -21,86 +18,56 @@ function formatTime(time) {
 function App() {
   const [vehicles, setVehicles] = useState([]);
   const [trips, setTrips] = useState([]);
-
   const [vehicleNumber, setVehicleNumber] = useState("");
+  const [driver, setDriver] = useState("");
 
   const [startMode, setStartMode] = useState(null);
   const [endMode, setEndMode] = useState(null);
 
-  const [driverName, setDriverName] = useState("");
   const [startImages, setStartImages] = useState({});
   const [endImages, setEndImages] = useState({});
 
+  const fetchData = async () => {
+    const v = await fetch(`${BASE_URL}/vehicles`).then((r) => r.json());
+    const t = await fetch(`${BASE_URL}/trips`).then((r) => r.json());
+    setVehicles(v);
+    setTrips(t);
+  };
+
   useEffect(() => {
-    fetchVehicles();
-    fetchTrips();
+    fetchData();
   }, []);
 
-  const fetchVehicles = async () => {
-    const res = await fetch(`${BASE_URL}/vehicles`);
-    setVehicles(await res.json());
-  };
-
-  const fetchTrips = async () => {
-    const res = await fetch(`${BASE_URL}/trips`);
-    setTrips(await res.json());
-  };
-
   const addVehicle = async () => {
-    const form = new FormData();
-    form.append("vehicle_number", vehicleNumber);
-
-    await fetch(`${BASE_URL}/add_vehicle`, {
-      method: "POST",
-      body: form,
-    });
-
-    setVehicleNumber("");
-    fetchVehicles();
+    const f = new FormData();
+    f.append("vehicle_number", vehicleNumber);
+    await fetch(`${BASE_URL}/add_vehicle`, { method: "POST", body: f });
+    fetchData();
   };
 
   const startTrip = async () => {
-    const form = new FormData();
-    form.append("vehicle_number", startMode);
-    form.append("driver_name", driverName);
+    const f = new FormData();
+    f.append("vehicle_number", startMode);
+    f.append("driver_name", driver);
+    Object.entries(startImages).forEach(([k, v]) => f.append(k, v));
 
-    form.append("front", startImages.front);
-    form.append("back", startImages.back);
-    form.append("left", startImages.left);
-    form.append("right", startImages.right);
-
-    await fetch(`${BASE_URL}/start_trip`, {
-      method: "POST",
-      body: form,
-    });
+    await fetch(`${BASE_URL}/start_trip`, { method: "POST", body: f });
 
     setStartMode(null);
-    setDriverName("");
     setStartImages({});
-
-    fetchVehicles();
-    fetchTrips();
+    fetchData();
   };
 
   const endTrip = async () => {
-    const form = new FormData();
-    form.append("vehicle_number", endMode);
+    const f = new FormData();
+    f.append("vehicle_number", endMode);
+    Object.entries(endImages).forEach(([k, v]) => f.append(k, v));
 
-    form.append("front", endImages.front);
-    form.append("back", endImages.back);
-    form.append("left", endImages.left);
-    form.append("right", endImages.right);
-
-    await fetch(`${BASE_URL}/end_trip`, {
-      method: "POST",
-      body: form,
-    });
+    await fetch(`${BASE_URL}/end_trip`, { method: "POST", body: f });
 
     setEndMode(null);
     setEndImages({});
-
-    fetchVehicles();
-    fetchTrips();
+    fetchData();
   };
 
   const ongoing = trips.filter((t) => t.status === "ongoing");
@@ -110,21 +77,14 @@ function App() {
     <div style={{ padding: 20 }}>
       <h1>🚗 FleetVault</h1>
 
-      {/* ADD VEHICLE */}
       <h2>Add Vehicle</h2>
-      <input
-        value={vehicleNumber}
-        onChange={(e) => setVehicleNumber(e.target.value)}
-        placeholder="Vehicle Number"
-      />
+      <input onChange={(e) => setVehicleNumber(e.target.value)} />
       <button onClick={addVehicle}>Add</button>
 
-      {/* VEHICLES */}
       <h2>Vehicles</h2>
       {vehicles.map((v) => (
         <div key={v.id}>
-          <b>{v.vehicle_number}</b> —{" "}
-          {v.available ? "🟢 Available" : "🔴 On Trip"}
+          {v.vehicle_number} — {v.available ? "🟢 Available" : "🔴 On Trip"}
 
           {v.available && (
             <button onClick={() => setStartMode(v.vehicle_number)}>
@@ -133,100 +93,65 @@ function App() {
           )}
 
           {!v.available && (
-            <>
-              <button onClick={() => setEndMode(v.vehicle_number)}>
-                End Trip
-              </button>
-
-              {/* END FLOW HERE */}
-              {endMode === v.vehicle_number && (
-                <div>
-                  <h4>Upload END Images</h4>
-
-                  Front Image{" "}
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setEndImages({
-                        ...endImages,
-                        front: e.target.files[0],
-                      })
-                    }
-                  />
-                  <br />
-
-                  Back Image{" "}
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setEndImages({
-                        ...endImages,
-                        back: e.target.files[0],
-                      })
-                    }
-                  />
-                  <br />
-
-                  Left Image{" "}
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setEndImages({
-                        ...endImages,
-                        left: e.target.files[0],
-                      })
-                    }
-                  />
-                  <br />
-
-                  Right Image{" "}
-                  <input
-                    type="file"
-                    onChange={(e) =>
-                      setEndImages({
-                        ...endImages,
-                        right: e.target.files[0],
-                      })
-                    }
-                  />
-                  <br />
-
-                  <button onClick={endTrip}>Confirm End Trip</button>
-                </div>
-              )}
-            </>
+            <button onClick={() => setEndMode(v.vehicle_number)}>
+              End Trip
+            </button>
           )}
-
-          <hr />
         </div>
       ))}
 
       {/* START FLOW */}
       {startMode && (
         <div>
-          <h2>Start Trip: {startMode}</h2>
-
+          <h3>Start Trip: {startMode}</h3>
           <input
-            placeholder="Driver Name"
-            value={driverName}
-            onChange={(e) => setDriverName(e.target.value)}
+            placeholder="Driver"
+            onChange={(e) => setDriver(e.target.value)}
           />
 
-          <br />
-          Front Image <input type="file" onChange={(e) => setStartImages({ ...startImages, front: e.target.files[0] })} />
-          <br />
-          Back Image <input type="file" onChange={(e) => setStartImages({ ...startImages, back: e.target.files[0] })} />
-          <br />
-          Left Image <input type="file" onChange={(e) => setStartImages({ ...startImages, left: e.target.files[0] })} />
-          <br />
-          Right Image <input type="file" onChange={(e) => setStartImages({ ...startImages, right: e.target.files[0] })} />
-          <br />
+          {["front", "back", "left", "right"].map((side) => (
+            <div key={side}>
+              {side}{" "}
+              <input
+                type="file"
+                onChange={(e) =>
+                  setStartImages({
+                    ...startImages,
+                    [side]: e.target.files[0],
+                  })
+                }
+              />
+            </div>
+          ))}
 
-          <button onClick={startTrip}>Confirm Start Trip</button>
+          <button onClick={startTrip}>Confirm Start</button>
         </div>
       )}
 
-      {/* ONGOING */}
+      {/* END FLOW */}
+      {endMode && (
+        <div>
+          <h3>End Trip: {endMode}</h3>
+
+          {["front", "back", "left", "right"].map((side) => (
+            <div key={side}>
+              {side}{" "}
+              <input
+                type="file"
+                onChange={(e) =>
+                  setEndImages({
+                    ...endImages,
+                    [side]: e.target.files[0],
+                  })
+                }
+              />
+            </div>
+          ))}
+
+          <button onClick={endTrip}>Confirm End</button>
+        </div>
+      )}
+
       <h2>Ongoing Trips</h2>
       {ongoing.map((t) => (
         <div key={t.id}>
@@ -235,36 +160,14 @@ function App() {
           Start: {formatTime(t.start_time)}
 
           <br />
+
           <button onClick={() => setEndMode(t.vehicle_number)}>
             End Trip
           </button>
-
-          {endMode === t.vehicle_number && (
-            <div>
-              <h4>Upload END Images</h4>
-
-              Front Image{" "}
-              <input type="file" onChange={(e) => setEndImages({ ...endImages, front: e.target.files[0] })} />
-              <br />
-              Back Image{" "}
-              <input type="file" onChange={(e) => setEndImages({ ...endImages, back: e.target.files[0] })} />
-              <br />
-              Left Image{" "}
-              <input type="file" onChange={(e) => setEndImages({ ...endImages, left: e.target.files[0] })} />
-              <br />
-              Right Image{" "}
-              <input type="file" onChange={(e) => setEndImages({ ...endImages, right: e.target.files[0] })} />
-              <br />
-
-              <button onClick={endTrip}>Confirm End Trip</button>
-            </div>
-          )}
-
           <hr />
         </div>
       ))}
 
-      {/* COMPLETED */}
       <h2>Completed Trips</h2>
       {completed.map((t) => (
         <div key={t.id}>
@@ -276,9 +179,9 @@ function App() {
           <br />
           End: {formatTime(t.end_time)}
           <br />
-          Damage: {t.damage_detected ? "⚠️ YES" : "✅ NO"}
+          Damage: {t.damage_detected ? "⚠ YES" : "NO"}
           <br />
-          Score: {t.damage_score?.toFixed(2)}
+          Fine: ₹{t.fine_amount}
           <hr />
         </div>
       ))}
