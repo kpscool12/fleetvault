@@ -210,9 +210,23 @@ function App() {
           <br />
           Driver: {t.driver_name}
           <br />
-          Start: {t.start_time}
-          <br />
-          End: {t.end_time}
+          Start: {new Date(t.start_time).toLocaleString("en-IN", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit"
+})}
+
+<br />
+
+End: {new Date(t.end_time).toLocaleString("en-IN", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit"
+})}
           <br />
           Damage: {t.damage_detected ? "⚠️ YES" : "✅ NO"}
           <br />
