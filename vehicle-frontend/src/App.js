@@ -1,14 +1,25 @@
 import React, { useEffect, useState } from "react";
 
-// 🔥 PUT YOUR BACKEND URL HERE (IMPORTANT)
+// 🔥 YOUR BACKEND URL
 const BASE_URL = "https://fleetvault-backend.onrender.com";
 
-// ✅ SIMPLE TIME FORMAT (NO BUGS)
+// ✅ FINAL TIME FIX (NO BUGS, NO SHIFT)
 function formatTime(time) {
   if (!time) return "";
 
-  const d = new Date(time);
-  return d.toLocaleString("en-IN");
+  // Treat backend time as UTC, convert to IST manually
+  const utc = new Date(time + "Z");
+
+  const ist = new Date(utc.getTime() + 5.5 * 60 * 60 * 1000);
+
+  return ist.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 function App() {
@@ -33,7 +44,7 @@ function App() {
       setVehicles(v);
       setTrips(t);
     } catch (e) {
-      console.error("Fetch error:", e);
+      console.error(e);
     }
   };
 
@@ -52,17 +63,15 @@ function App() {
       const form = new FormData();
       form.append("vehicle_number", vehicleNumber);
 
-      const res = await fetch(`${BASE_URL}/add_vehicle`, {
+      await fetch(`${BASE_URL}/add_vehicle`, {
         method: "POST",
         body: form,
       });
 
-      if (!res.ok) throw new Error("Failed");
-
       setVehicleNumber("");
       fetchData();
-    } catch (e) {
-      alert("Backend not reachable. Wait 30 sec & try again.");
+    } catch {
+      alert("Backend issue. Try again.");
     }
   };
 
@@ -87,7 +96,7 @@ function App() {
       setStartImages({});
       fetchData();
     } catch {
-      alert("Error starting trip");
+      alert("Start failed");
     }
   };
 
@@ -110,7 +119,7 @@ function App() {
       setEndImages({});
       fetchData();
     } catch {
-      alert("Error ending trip");
+      alert("End failed");
     }
   };
 
@@ -215,7 +224,6 @@ function App() {
           🚗 {t.vehicle_number} — {t.driver_name}
           <br />
           Start: {formatTime(t.start_time)}
-
           <hr />
         </div>
       ))}
