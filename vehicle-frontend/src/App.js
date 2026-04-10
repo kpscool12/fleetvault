@@ -4,10 +4,7 @@ const BASE_URL = "https://fleetvault-backend.onrender.com";
 
 function formatTime(time) {
   if (!time) return "";
-
-  const date = new Date(time);
-
-  return date.toLocaleString("en-IN", {
+  return new Date(time).toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -19,9 +16,9 @@ function formatTime(time) {
 function App() {
   const [vehicles, setVehicles] = useState([]);
   const [trips, setTrips] = useState([]);
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [driverName, setDriverName] = useState("");
-  const [endTripId, setEndTripId] = useState(null);
+  const [vehicleInput, setVehicleInput] = useState("");
+  const [driverInput, setDriverInput] = useState("");
+  const [activeEnd, setActiveEnd] = useState(null);
 
   const fetchData = async () => {
     const v = await fetch(`${BASE_URL}/vehicles`);
@@ -35,36 +32,51 @@ function App() {
     fetchData();
   }, []);
 
+  // ✅ ADD VEHICLE
   const addVehicle = async () => {
-    if (!vehicleNumber) return;
+    if (!vehicleInput) return;
 
     const form = new FormData();
-    form.append("vehicle_number", vehicleNumber);
+    form.append("vehicle_number", vehicleInput);
 
     await fetch(`${BASE_URL}/add_vehicle`, {
       method: "POST",
       body: form,
     });
 
-    setVehicleNumber("");
+    setVehicleInput("");
     fetchData();
   };
 
-  const startTrip = async (v) => {
-    const form = new FormData();
-    form.append("vehicle_number", v.vehicle_number);
-    form.append("driver_name", driverName || "Driver");
+  // ✅ START TRIP (FIXED)
+  const startTrip = async (vehicle) => {
+    if (!driverInput) {
+      alert("Enter driver name");
+      return;
+    }
 
-    await fetch(`${BASE_URL}/start_trip`, {
+    const form = new FormData();
+    form.append("vehicle_number", vehicle.vehicle_number);
+    form.append("driver_name", driverInput); // 🔥 THIS WAS THE ISSUE
+
+    const res = await fetch(`${BASE_URL}/start_trip`, {
       method: "POST",
       body: form,
     });
 
-    setDriverName("");
+    const data = await res.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    setDriverInput("");
     fetchData();
   };
 
-  const confirmEndTrip = async (vehicle_number) => {
+  // ✅ END TRIP
+  const endTrip = async (vehicle_number) => {
     const form = new FormData();
     form.append("vehicle_number", vehicle_number);
 
@@ -73,7 +85,7 @@ function App() {
       body: form,
     });
 
-    setEndTripId(null);
+    setActiveEnd(null);
     fetchData();
   };
 
@@ -87,8 +99,8 @@ function App() {
       {/* ADD VEHICLE */}
       <h2>Add Vehicle</h2>
       <input
-        value={vehicleNumber}
-        onChange={(e) => setVehicleNumber(e.target.value)}
+        value={vehicleInput}
+        onChange={(e) => setVehicleInput(e.target.value)}
         placeholder="Vehicle Number"
       />
       <button onClick={addVehicle}>Add</button>
@@ -103,17 +115,19 @@ function App() {
           {v.available && (
             <>
               <input
-                placeholder="Driver"
-                value={driverName}
-                onChange={(e) => setDriverName(e.target.value)}
+                placeholder="Driver Name"
+                value={driverInput}
+                onChange={(e) => setDriverInput(e.target.value)}
               />
-              <button onClick={() => startTrip(v)}>Start Trip</button>
+              <button onClick={() => startTrip(v)}>
+                Confirm Start Trip
+              </button>
             </>
           )}
         </div>
       ))}
 
-      {/* ONGOING TRIPS */}
+      {/* ONGOING */}
       <h2>Ongoing Trips</h2>
       {ongoing.map((t) => (
         <div key={t.id}>
@@ -121,16 +135,14 @@ function App() {
           <br />
           Start: {formatTime(t.start_time)}
 
-          {/* 🔥 END TRIP BUTTON FIX */}
           <br />
-          <button onClick={() => setEndTripId(t.vehicle_number)}>
+          <button onClick={() => setActiveEnd(t.vehicle_number)}>
             End Trip
           </button>
 
-          {/* 🔥 SHOW ONLY FOR CLICKED ONE */}
-          {endTripId === t.vehicle_number && (
-            <div style={{ marginTop: 10 }}>
-              <button onClick={() => confirmEndTrip(t.vehicle_number)}>
+          {activeEnd === t.vehicle_number && (
+            <div>
+              <button onClick={() => endTrip(t.vehicle_number)}>
                 Confirm End Trip
               </button>
             </div>
