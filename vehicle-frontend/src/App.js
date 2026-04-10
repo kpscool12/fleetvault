@@ -8,6 +8,7 @@ function formatTime(time) {
   const date = new Date(time);
 
   return date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -19,6 +20,8 @@ function formatTime(time) {
 
 function App() {
   const [vehicles, setVehicles] = useState([]);
+  const [trips, setTrips] = useState([]);
+
   const [vehicleNumber, setVehicleNumber] = useState("");
 
   const [startMode, setStartMode] = useState(null);
@@ -27,8 +30,6 @@ function App() {
   const [driverName, setDriverName] = useState("");
   const [startImages, setStartImages] = useState({});
   const [endImages, setEndImages] = useState({});
-
-  const [trips, setTrips] = useState([]);
 
   useEffect(() => {
     fetchVehicles();
@@ -49,23 +50,16 @@ function App() {
     const form = new FormData();
     form.append("vehicle_number", vehicleNumber);
 
-    const res = await fetch(`${BASE_URL}/add_vehicle`, {
+    await fetch(`${BASE_URL}/add_vehicle`, {
       method: "POST",
       body: form,
     });
-
-    const data = await res.json();
-    if (data.error) return alert(data.error);
 
     setVehicleNumber("");
     fetchVehicles();
   };
 
   const startTrip = async () => {
-    if (!driverName || Object.keys(startImages).length !== 4) {
-      return alert("Upload all images + driver name");
-    }
-
     const form = new FormData();
     form.append("vehicle_number", startMode);
     form.append("driver_name", driverName);
@@ -75,28 +69,20 @@ function App() {
     form.append("left", startImages.left);
     form.append("right", startImages.right);
 
-    const res = await fetch(`${BASE_URL}/start_trip`, {
+    await fetch(`${BASE_URL}/start_trip`, {
       method: "POST",
       body: form,
     });
 
-    const data = await res.json();
-    if (data.error) return alert(data.error);
-
-    alert("Trip Started");
-
     setStartMode(null);
     setDriverName("");
     setStartImages({});
+
     fetchVehicles();
     fetchTrips();
   };
 
   const endTrip = async () => {
-    if (!endMode || Object.keys(endImages).length !== 4) {
-      return alert("Upload all END images");
-    }
-
     const form = new FormData();
     form.append("vehicle_number", endMode);
 
@@ -105,15 +91,10 @@ function App() {
     form.append("left", endImages.left);
     form.append("right", endImages.right);
 
-    const res = await fetch(`${BASE_URL}/end_trip`, {
+    await fetch(`${BASE_URL}/end_trip`, {
       method: "POST",
       body: form,
     });
-
-    const data = await res.json();
-    if (data.error) return alert(data.error);
-
-    alert(`Trip Ended | Damage: ${data.damage ? "YES" : "NO"}`);
 
     setEndMode(null);
     setEndImages({});
@@ -129,6 +110,7 @@ function App() {
     <div style={{ padding: 20 }}>
       <h1>🚗 FleetVault</h1>
 
+      {/* ADD VEHICLE */}
       <h2>Add Vehicle</h2>
       <input
         value={vehicleNumber}
@@ -137,6 +119,7 @@ function App() {
       />
       <button onClick={addVehicle}>Add</button>
 
+      {/* VEHICLES */}
       <h2>Vehicles</h2>
       {vehicles.map((v) => (
         <div key={v.id}>
@@ -150,15 +133,75 @@ function App() {
           )}
 
           {!v.available && (
-            <button onClick={() => setEndMode(v.vehicle_number)}>
-              End Trip
-            </button>
+            <>
+              <button onClick={() => setEndMode(v.vehicle_number)}>
+                End Trip
+              </button>
+
+              {/* END FLOW HERE */}
+              {endMode === v.vehicle_number && (
+                <div>
+                  <h4>Upload END Images</h4>
+
+                  Front Image{" "}
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setEndImages({
+                        ...endImages,
+                        front: e.target.files[0],
+                      })
+                    }
+                  />
+                  <br />
+
+                  Back Image{" "}
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setEndImages({
+                        ...endImages,
+                        back: e.target.files[0],
+                      })
+                    }
+                  />
+                  <br />
+
+                  Left Image{" "}
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setEndImages({
+                        ...endImages,
+                        left: e.target.files[0],
+                      })
+                    }
+                  />
+                  <br />
+
+                  Right Image{" "}
+                  <input
+                    type="file"
+                    onChange={(e) =>
+                      setEndImages({
+                        ...endImages,
+                        right: e.target.files[0],
+                      })
+                    }
+                  />
+                  <br />
+
+                  <button onClick={endTrip}>Confirm End Trip</button>
+                </div>
+              )}
+            </>
           )}
 
           <hr />
         </div>
       ))}
 
+      {/* START FLOW */}
       {startMode && (
         <div>
           <h2>Start Trip: {startMode}</h2>
@@ -170,46 +213,58 @@ function App() {
           />
 
           <br />
-          Front <input type="file" onChange={(e) => setStartImages({ ...startImages, front: e.target.files[0] })} />
+          Front Image <input type="file" onChange={(e) => setStartImages({ ...startImages, front: e.target.files[0] })} />
           <br />
-          Back <input type="file" onChange={(e) => setStartImages({ ...startImages, back: e.target.files[0] })} />
+          Back Image <input type="file" onChange={(e) => setStartImages({ ...startImages, back: e.target.files[0] })} />
           <br />
-          Left <input type="file" onChange={(e) => setStartImages({ ...startImages, left: e.target.files[0] })} />
+          Left Image <input type="file" onChange={(e) => setStartImages({ ...startImages, left: e.target.files[0] })} />
           <br />
-          Right <input type="file" onChange={(e) => setStartImages({ ...startImages, right: e.target.files[0] })} />
+          Right Image <input type="file" onChange={(e) => setStartImages({ ...startImages, right: e.target.files[0] })} />
           <br />
 
           <button onClick={startTrip}>Confirm Start Trip</button>
         </div>
       )}
 
-      {endMode && (
-        <div>
-          <h2>End Trip: {endMode}</h2>
-
-          Front <input type="file" onChange={(e) => setEndImages({ ...endImages, front: e.target.files[0] })} />
-          <br />
-          Back <input type="file" onChange={(e) => setEndImages({ ...endImages, back: e.target.files[0] })} />
-          <br />
-          Left <input type="file" onChange={(e) => setEndImages({ ...endImages, left: e.target.files[0] })} />
-          <br />
-          Right <input type="file" onChange={(e) => setEndImages({ ...endImages, right: e.target.files[0] })} />
-          <br />
-
-          <button onClick={endTrip}>Confirm End Trip</button>
-        </div>
-      )}
-
+      {/* ONGOING */}
       <h2>Ongoing Trips</h2>
       {ongoing.map((t) => (
         <div key={t.id}>
-          🚗 {t.vehicle_number} - {t.driver_name}
+          🚗 {t.vehicle_number} — {t.driver_name}
           <br />
           Start: {formatTime(t.start_time)}
+
+          <br />
+          <button onClick={() => setEndMode(t.vehicle_number)}>
+            End Trip
+          </button>
+
+          {endMode === t.vehicle_number && (
+            <div>
+              <h4>Upload END Images</h4>
+
+              Front Image{" "}
+              <input type="file" onChange={(e) => setEndImages({ ...endImages, front: e.target.files[0] })} />
+              <br />
+              Back Image{" "}
+              <input type="file" onChange={(e) => setEndImages({ ...endImages, back: e.target.files[0] })} />
+              <br />
+              Left Image{" "}
+              <input type="file" onChange={(e) => setEndImages({ ...endImages, left: e.target.files[0] })} />
+              <br />
+              Right Image{" "}
+              <input type="file" onChange={(e) => setEndImages({ ...endImages, right: e.target.files[0] })} />
+              <br />
+
+              <button onClick={endTrip}>Confirm End Trip</button>
+            </div>
+          )}
+
           <hr />
         </div>
       ))}
 
+      {/* COMPLETED */}
       <h2>Completed Trips</h2>
       {completed.map((t) => (
         <div key={t.id}>

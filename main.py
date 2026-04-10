@@ -1,12 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from datetime import datetime
-import shutil, os
+import pytz
+import shutil
+import os
 import cv2
 import numpy as np
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float
-from sqlalchemy.orm import sessionmaker, declarative_base
 
+# ================= APP =================
 app = FastAPI()
 
 app.add_middleware(
@@ -17,16 +20,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# ================= DB =================
+DATABASE_URL = "sqlite:///./rental.db"
 
-engine = create_engine("sqlite:///./rental.db")
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}  # important for sqlite
+)
+
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
+# ================= TIMEZONE =================
+IST = pytz.timezone("Asia/Kolkata")
+
+# ================= FILE STORAGE =================
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 # ================= MODELS =================
-
 class Vehicle(Base):
     __tablename__ = "vehicles"
     id = Column(Integer, primary_key=True)
@@ -36,6 +49,7 @@ class Vehicle(Base):
 
 class Trip(Base):
     __tablename__ = "trips"
+
     id = Column(Integer, primary_key=True)
 
     vehicle_number = Column(String)
@@ -62,12 +76,23 @@ class Trip(Base):
 Base.metadata.create_all(bind=engine)
 
 
-# ================= HELPERS =================
+# ================= DB DEPENDENCY =================
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
+
+# ================= HELPERS =================
 def save_file(file: UploadFile):
-    path = f"{UPLOAD_DIR}/{datetime.now().timestamp()}_{file.filename}"
+    filename = f"{datetime.now().timestamp()}_{file.filename}"
+    path = os.path.join(UPLOAD_DIR, filename)
+
     with open(path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
     return path
 
 
@@ -85,13 +110,16 @@ def compare_images(img1_path, img2_path):
     return float(np.mean(diff))
 
 
-# ================= API =================
+# ================= ROUTES =================
 
 @app.post("/add_vehicle")
-def add_vehicle(vehicle_number: str = Form(...)):
-    db = SessionLocal()
+def add_vehicle(
+    vehicle_number: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    existing = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
 
-    if db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first():
+    if existing:
         return {"error": "Vehicle already exists"}
 
     db.add(Vehicle(vehicle_number=vehicle_number))
@@ -101,8 +129,7 @@ def add_vehicle(vehicle_number: str = Form(...)):
 
 
 @app.get("/vehicles")
-def get_vehicles():
-    db = SessionLocal()
+def get_vehicles(db: Session = Depends(get_db)):
     return db.query(Vehicle).all()
 
 
@@ -113,10 +140,9 @@ def start_trip(
     front: UploadFile = File(...),
     back: UploadFile = File(...),
     left: UploadFile = File(...),
-    right: UploadFile = File(...)
+    right: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
-    db = SessionLocal()
-
     vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
 
     if not vehicle:
@@ -125,16 +151,22 @@ def start_trip(
     if not vehicle.available:
         return {"error": "Vehicle already in trip"}
 
+    # Save images
+    front_path = save_file(front)
+    back_path = save_file(back)
+    left_path = save_file(left)
+    right_path = save_file(right)
+
     trip = Trip(
         vehicle_number=vehicle_number,
         driver_name=driver_name,
         status="ongoing",
-        start_time=datetime.utcnow().isoformat(),
+        start_time=datetime.now(IST).isoformat(),
 
-        start_front=save_file(front),
-        start_back=save_file(back),
-        start_left=save_file(left),
-        start_right=save_file(right)
+        start_front=front_path,
+        start_back=back_path,
+        start_left=left_path,
+        start_right=right_path
     )
 
     vehicle.available = False
@@ -151,10 +183,9 @@ def end_trip(
     front: UploadFile = File(...),
     back: UploadFile = File(...),
     left: UploadFile = File(...),
-    right: UploadFile = File(...)
+    right: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
-    db = SessionLocal()
-
     trip = db.query(Trip).filter_by(
         vehicle_number=vehicle_number,
         status="ongoing"
@@ -163,16 +194,23 @@ def end_trip(
     if not trip:
         return {"error": "No active trip found"}
 
-    trip.end_front = save_file(front)
-    trip.end_back = save_file(back)
-    trip.end_left = save_file(left)
-    trip.end_right = save_file(right)
+    # Save end images
+    front_path = save_file(front)
+    back_path = save_file(back)
+    left_path = save_file(left)
+    right_path = save_file(right)
 
+    trip.end_front = front_path
+    trip.end_back = back_path
+    trip.end_left = left_path
+    trip.end_right = right_path
+
+    # AI comparison
     scores = [
-        compare_images(trip.start_front, trip.end_front),
-        compare_images(trip.start_back, trip.end_back),
-        compare_images(trip.start_left, trip.end_left),
-        compare_images(trip.start_right, trip.end_right),
+        compare_images(trip.start_front, front_path),
+        compare_images(trip.start_back, back_path),
+        compare_images(trip.start_left, left_path),
+        compare_images(trip.start_right, right_path),
     ]
 
     avg_score = sum(scores) / len(scores)
@@ -181,7 +219,7 @@ def end_trip(
     trip.damage_detected = damage
     trip.damage_score = avg_score
     trip.status = "completed"
-    trip.end_time = datetime.utcnow().isoformat()
+    trip.end_time = datetime.now(IST).isoformat()
 
     vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
     vehicle.available = True
@@ -196,6 +234,5 @@ def end_trip(
 
 
 @app.get("/trips")
-def get_trips():
-    db = SessionLocal()
+def get_trips(db: Session = Depends(get_db)):
     return db.query(Trip).all()
