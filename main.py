@@ -37,6 +37,7 @@ class Vehicle(Base):
 class Trip(Base):
     __tablename__ = "trips"
     id = Column(Integer, primary_key=True)
+
     vehicle_number = Column(String)
     driver_name = Column(String)
     status = Column(String)
@@ -74,12 +75,14 @@ def compare_images(img1_path, img2_path):
     img1 = cv2.imread(img1_path)
     img2 = cv2.imread(img2_path)
 
+    if img1 is None or img2 is None:
+        return 0
+
     img1 = cv2.resize(img1, (300, 300))
     img2 = cv2.resize(img2, (300, 300))
 
     diff = cv2.absdiff(img1, img2)
-    score = np.mean(diff)
-    return score
+    return float(np.mean(diff))
 
 
 # ================= API =================
@@ -89,11 +92,11 @@ def add_vehicle(vehicle_number: str = Form(...)):
     db = SessionLocal()
 
     if db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first():
-        return {"error": "Vehicle exists"}
+        return {"error": "Vehicle already exists"}
 
-    v = Vehicle(vehicle_number=vehicle_number)
-    db.add(v)
+    db.add(Vehicle(vehicle_number=vehicle_number))
     db.commit()
+
     return {"message": "Vehicle added"}
 
 
@@ -107,7 +110,6 @@ def get_vehicles():
 def start_trip(
     vehicle_number: str = Form(...),
     driver_name: str = Form(...),
-
     front: UploadFile = File(...),
     back: UploadFile = File(...),
     left: UploadFile = File(...),
@@ -116,14 +118,18 @@ def start_trip(
     db = SessionLocal()
 
     vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
-    if not vehicle or not vehicle.available:
-        return {"error": "Vehicle not available"}
+
+    if not vehicle:
+        return {"error": "Vehicle not found"}
+
+    if not vehicle.available:
+        return {"error": "Vehicle already in trip"}
 
     trip = Trip(
         vehicle_number=vehicle_number,
         driver_name=driver_name,
         status="ongoing",
-        start_time=str(datetime.now()),
+        start_time=datetime.utcnow().isoformat(),
 
         start_front=save_file(front),
         start_back=save_file(back),
@@ -142,7 +148,6 @@ def start_trip(
 @app.post("/end_trip")
 def end_trip(
     vehicle_number: str = Form(...),
-
     front: UploadFile = File(...),
     back: UploadFile = File(...),
     left: UploadFile = File(...),
@@ -156,15 +161,13 @@ def end_trip(
     ).first()
 
     if not trip:
-        return {"error": "Trip not found"}
+        return {"error": "No active trip found"}
 
-    # Save end images
     trip.end_front = save_file(front)
     trip.end_back = save_file(back)
     trip.end_left = save_file(left)
     trip.end_right = save_file(right)
 
-    # AI comparison
     scores = [
         compare_images(trip.start_front, trip.end_front),
         compare_images(trip.start_back, trip.end_back),
@@ -178,7 +181,7 @@ def end_trip(
     trip.damage_detected = damage
     trip.damage_score = avg_score
     trip.status = "completed"
-    trip.end_time = str(datetime.now())
+    trip.end_time = datetime.utcnow().isoformat()
 
     vehicle = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
     vehicle.available = True
