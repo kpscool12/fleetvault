@@ -2,23 +2,22 @@ import React, { useEffect, useState } from "react";
 
 const BASE_URL = "https://fleetvault-backend.onrender.com";
 
-function formatTime(time) {
-  if (!time) return "";
-  return new Date(time).toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTime(t) {
+  if (!t) return "";
+  return new Date(t).toLocaleString("en-IN");
 }
 
-function App() {
+export default function App() {
   const [vehicles, setVehicles] = useState([]);
   const [trips, setTrips] = useState([]);
+
   const [vehicleInput, setVehicleInput] = useState("");
   const [driverInput, setDriverInput] = useState("");
-  const [activeEnd, setActiveEnd] = useState(null);
+
+  const [startUI, setStartUI] = useState(null);
+  const [endUI, setEndUI] = useState(null);
+
+  const [files, setFiles] = useState({});
 
   const fetchData = async () => {
     const v = await fetch(`${BASE_URL}/vehicles`);
@@ -32,10 +31,7 @@ function App() {
     fetchData();
   }, []);
 
-  // ✅ ADD VEHICLE
   const addVehicle = async () => {
-    if (!vehicleInput) return;
-
     const form = new FormData();
     form.append("vehicle_number", vehicleInput);
 
@@ -48,103 +44,98 @@ function App() {
     fetchData();
   };
 
-  // ✅ START TRIP (FIXED)
-  const startTrip = async (vehicle) => {
-    if (!driverInput) {
-      alert("Enter driver name");
-      return;
-    }
-
+  const startTrip = async (v) => {
     const form = new FormData();
-    form.append("vehicle_number", vehicle.vehicle_number);
-    form.append("driver_name", driverInput); // 🔥 THIS WAS THE ISSUE
+    form.append("vehicle_number", v.vehicle_number);
+    form.append("driver_name", driverInput);
 
-    const res = await fetch(`${BASE_URL}/start_trip`, {
+    Object.keys(files).forEach(k => form.append(k, files[k]));
+
+    await fetch(`${BASE_URL}/start_trip`, {
       method: "POST",
       body: form,
     });
 
-    const data = await res.json();
-
-    if (data.error) {
-      alert(data.error);
-      return;
-    }
-
-    setDriverInput("");
+    setStartUI(null);
+    setFiles({});
     fetchData();
   };
 
-  // ✅ END TRIP
-  const endTrip = async (vehicle_number) => {
+  const endTrip = async (v) => {
     const form = new FormData();
-    form.append("vehicle_number", vehicle_number);
+    form.append("vehicle_number", v);
+
+    Object.keys(files).forEach(k => form.append(k, files[k]));
 
     await fetch(`${BASE_URL}/end_trip`, {
       method: "POST",
       body: form,
     });
 
-    setActiveEnd(null);
+    setEndUI(null);
+    setFiles({});
     fetchData();
   };
 
-  const ongoing = trips.filter((t) => t.status === "ongoing");
-  const completed = trips.filter((t) => t.status === "completed");
+  const ongoing = trips.filter(t => t.status === "ongoing");
+  const completed = trips.filter(t => t.status === "completed");
 
   return (
     <div style={{ padding: 20 }}>
       <h1>🚗 FleetVault</h1>
 
-      {/* ADD VEHICLE */}
       <h2>Add Vehicle</h2>
-      <input
-        value={vehicleInput}
-        onChange={(e) => setVehicleInput(e.target.value)}
-        placeholder="Vehicle Number"
-      />
+      <input value={vehicleInput} onChange={e => setVehicleInput(e.target.value)} />
       <button onClick={addVehicle}>Add</button>
 
-      {/* VEHICLES */}
       <h2>Vehicles</h2>
-      {vehicles.map((v) => (
+      {vehicles.map(v => (
         <div key={v.id}>
-          {v.vehicle_number} —{" "}
-          {v.available ? "🟢 Available" : "🔴 On Trip"}
+          {v.vehicle_number} — {v.available ? "🟢 Available" : "🔴 On Trip"}
 
           {v.available && (
             <>
-              <input
-                placeholder="Driver Name"
-                value={driverInput}
-                onChange={(e) => setDriverInput(e.target.value)}
-              />
-              <button onClick={() => startTrip(v)}>
-                Confirm Start Trip
-              </button>
+              <br />
+              <button onClick={() => setStartUI(v.vehicle_number)}>Start Trip</button>
+
+              {startUI === v.vehicle_number && (
+                <div>
+                  <input
+                    placeholder="Driver"
+                    value={driverInput}
+                    onChange={e => setDriverInput(e.target.value)}
+                  />
+
+                  <br />
+                  <input type="file" onChange={e => setFiles({...files, front: e.target.files[0]})} />
+                  <input type="file" onChange={e => setFiles({...files, back: e.target.files[0]})} />
+
+                  <br />
+                  <button onClick={() => startTrip(v)}>Confirm Start</button>
+                </div>
+              )}
             </>
           )}
         </div>
       ))}
 
-      {/* ONGOING */}
       <h2>Ongoing Trips</h2>
-      {ongoing.map((t) => (
+      {ongoing.map(t => (
         <div key={t.id}>
           🚗 {t.vehicle_number} — {t.driver_name}
           <br />
           Start: {formatTime(t.start_time)}
 
           <br />
-          <button onClick={() => setActiveEnd(t.vehicle_number)}>
-            End Trip
-          </button>
+          <button onClick={() => setEndUI(t.vehicle_number)}>End Trip</button>
 
-          {activeEnd === t.vehicle_number && (
+          {endUI === t.vehicle_number && (
             <div>
-              <button onClick={() => endTrip(t.vehicle_number)}>
-                Confirm End Trip
-              </button>
+              <input type="file" onChange={e => setFiles({...files, front: e.target.files[0]})} />
+              <input type="file" onChange={e => setFiles({...files, back: e.target.files[0]})} />
+
+              <br />
+              <button onClick={() => endTrip(t.vehicle_number)}>Confirm End</button>
             </div>
           )}
 
@@ -152,9 +143,8 @@ function App() {
         </div>
       ))}
 
-      {/* COMPLETED */}
       <h2>Completed Trips</h2>
-      {completed.map((t) => (
+      {completed.map(t => (
         <div key={t.id}>
           🚗 {t.vehicle_number}
           <br />
@@ -166,12 +156,10 @@ function App() {
           <br />
           Damage: {t.damage_detected ? "⚠️ YES" : "NO"}
           <br />
-          Fine: ₹ {t.fine_amount}
+          Fine: ₹{t.fine_amount}
           <hr />
         </div>
       ))}
     </div>
   );
 }
-
-export default App;

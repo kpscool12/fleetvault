@@ -1,14 +1,13 @@
 from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Float
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
-import os
+import pytz
 
 app = FastAPI()
 
-# ================= CORS =================
+# ===== CORS =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,25 +16,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ================= DB =================
+# ===== DB =====
 DATABASE_URL = "sqlite:///./rental.db"
-
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# ================= MODELS =================
+# ===== TIMEZONE =====
+IST = pytz.timezone("Asia/Kolkata")
+
+# ===== MODELS =====
 class Vehicle(Base):
     __tablename__ = "vehicles"
-
     id = Column(Integer, primary_key=True)
     vehicle_number = Column(String, unique=True)
     available = Column(Boolean, default=True)
 
-
 class Trip(Base):
     __tablename__ = "trips"
-
     id = Column(Integer, primary_key=True)
     vehicle_number = Column(String)
     driver_name = Column(String)
@@ -44,45 +42,36 @@ class Trip(Base):
     end_time = Column(DateTime, nullable=True)
 
     status = Column(String, default="ongoing")
-
     damage_detected = Column(Boolean, default=False)
     fine_amount = Column(Float, default=0)
 
-
 Base.metadata.create_all(bind=engine)
 
-# ================= ROUTES =================
+# ===== ROUTES =====
 
 @app.get("/vehicles")
 def get_vehicles():
     db = SessionLocal()
-    vehicles = db.query(Vehicle).all()
-    return vehicles
-
+    return db.query(Vehicle).all()
 
 @app.get("/trips")
 def get_trips():
     db = SessionLocal()
-    trips = db.query(Trip).all()
-    return trips
-
+    return db.query(Trip).all()
 
 @app.post("/add_vehicle")
 def add_vehicle(vehicle_number: str = Form(...)):
     db = SessionLocal()
 
-    existing = db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first()
-    if existing:
-        return {"error": "Vehicle already exists"}
+    if db.query(Vehicle).filter_by(vehicle_number=vehicle_number).first():
+        return {"error": "Vehicle exists"}
 
-    v = Vehicle(vehicle_number=vehicle_number)
-    db.add(v)
+    db.add(Vehicle(vehicle_number=vehicle_number))
     db.commit()
 
-    return {"message": "Vehicle added"}
+    return {"message": "added"}
 
-
-# ================= START TRIP =================
+# ===== START TRIP =====
 @app.post("/start_trip")
 async def start_trip(
     vehicle_number: str = Form(...),
@@ -100,26 +89,22 @@ async def start_trip(
         return {"error": "Vehicle not found"}
 
     if not vehicle.available:
-        return {"error": "Vehicle already on trip"}
+        return {"error": "Already on trip"}
 
     trip = Trip(
         vehicle_number=vehicle_number,
         driver_name=driver_name,
-        start_time=datetime.utcnow(),  # UTC
-        status="ongoing",
+        start_time=datetime.now(IST),
+        status="ongoing"
     )
 
     db.add(trip)
-
     vehicle.available = False
 
     db.commit()
-    db.refresh(trip)
+    return {"message": "started"}
 
-    return {"message": "Trip started"}
-
-
-# ================= END TRIP =================
+# ===== END TRIP =====
 @app.post("/end_trip")
 async def end_trip(
     vehicle_number: str = Form(...),
@@ -130,24 +115,19 @@ async def end_trip(
 ):
     db = SessionLocal()
 
-    trip = (
-        db.query(Trip)
-        .filter_by(vehicle_number=vehicle_number, status="ongoing")
-        .first()
-    )
+    trip = db.query(Trip).filter_by(
+        vehicle_number=vehicle_number,
+        status="ongoing"
+    ).first()
 
     if not trip:
-        return {"error": "No active trip found"}
+        return {"error": "No active trip"}
 
-    # 🔥 Simple AI placeholder logic
-    damage = False
-    fine = 0
+    # dummy AI
+    damage = bool(front or back or left or right)
+    fine = 500 if damage else 0
 
-    if front or back or left or right:
-        damage = True
-        fine = 500  # simple rule
-
-    trip.end_time = datetime.utcnow()
+    trip.end_time = datetime.now(IST)
     trip.status = "completed"
     trip.damage_detected = damage
     trip.fine_amount = fine
@@ -158,8 +138,4 @@ async def end_trip(
 
     db.commit()
 
-    return {
-        "message": "Trip ended",
-        "damage_detected": damage,
-        "fine": fine,
-    }
+    return {"message": "ended"}
